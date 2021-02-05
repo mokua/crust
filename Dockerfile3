@@ -1,0 +1,6 @@
+FROM fedora:33
+COPY target/x86_64-unknown-linux-musl/release/crust /
+COPY config.json /
+##RUN  echo whoami
+##CMD ./crust --command "<command>" --mount "<mount_dir>" --uid 6 --config config.json --cgroup_path "/sys/fs/cgroup"
+CMD /bin/bash

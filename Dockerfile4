@@ -1,0 +1,34 @@
+FROM ubuntu:18.04
+ENV USERNAME rust-user
+ENV MUSL musl-1.2.2
+
+RUN apt update && apt install -y \
+    build-essential \
+    curl \
+    libseccomp-dev
+    ##gcc-x86_64-linux-gnu
+
+# Install MUSL for MIPS.
+WORKDIR /tmp
+RUN curl https://www.musl-libc.org/releases/$MUSL.tar.gz | tar xzf - && \
+    cd $MUSL && \
+    CC=x86_64-linux-gnu-gcc ./configure --prefix=/opt/musl --enable-wrappers=all && \
+    make -j install
+
+RUN useradd -m $USERNAME && (echo "$USERNAME:$USERNAME" | chpasswd)
+USER $USERNAME
+WORKDIR /home/$USERNAME
+
+# Install Rust.
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH="/home/$USERNAME/.cargo/bin:$PATH"
+RUN rustup target add x86_64-unknown-linux-musl
+
+
+# Create and build test project.
+# WORKDIR /home/$USERNAME/project
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
+COPY ./src ./src
+RUN cargo build --verbose --release --target x86_64-unknown-linux-musl
+  RUN ls -R /home/$USERNAME/target/x86_64-unknown-linux-musl/release
