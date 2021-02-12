@@ -1,3 +1,4 @@
+mod caps;
 mod resources;
 mod spec;
 
@@ -22,8 +23,8 @@ use nix::sys::time::{TimeSpec, TimeValLike};
 use nix::{sched, Error};
 use seccomp_sys::scmp_arch::SCMP_ARCH_NATIVE;
 use seccomp_sys::{
-    scmp_compare, seccomp_arch_add, seccomp_init, seccomp_release, seccomp_rule_add,
-    seccomp_rule_add_array, seccomp_syscall_resolve_name,
+    scmp_compare, seccomp_arch_add, seccomp_attr_set, seccomp_init, seccomp_load, seccomp_release,
+    seccomp_rule_add, seccomp_rule_add_array, seccomp_syscall_resolve_name,
 };
 use std::ffi::CString;
 use std::fs::File;
@@ -212,7 +213,7 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
         Err(_) => println!("error reading"),
     }
 
-    let res = sethostname("test_host");
+    let res = sethostname(&spec.hostname);
     match res {
         Ok(_) => {
             println!("managed to sethostname")
@@ -226,7 +227,14 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
     spec.linux.as_ref().map(|linux| {
         linux.seccomp.as_ref().map(|seccomp| {
             syscalls(&seccomp);
-        })
+        });
+    });
+    //capabilities
+    spec.process.as_ref().map(|process| {
+        process
+            .capabilities
+            .as_ref()
+            .map(|capabilities| caps::install_caps(&capabilities));
     });
 
     let child = Command::new("bash")
@@ -549,8 +557,34 @@ fn syscalls(seccomp: &LinuxSeccomp) {
                 }
             }
         }
-        //seccomp_load(ctx))
-        //seccomp_attr_set(ctx, SCMP_FLTATR_CTL_NNP, 0)
-        //if (ctx) seccomp_release(ctx);
+        let result = seccomp_attr_set(ctx, seccomp_sys::scmp_filter_attr::SCMP_FLTATR_CTL_NNP, 0);
+        println!(" result after calling seccomp_attr_set {}", result);
+        /*if result < 0  {
+            println!(" result is less than 0 ");
+            match result.abs() { //lets ignore the negative
+                //Setting the attribute with the given value is not allowed.
+                libc::EACCES =>
+
+
+                -EEXIST
+                    The attribute does not exist.
+
+                    -EINVAL
+                Invalid input, either the context or architecture token is
+                    invalid.
+
+                        -EOPNOTSUPP
+                The library doesn't support the particular operation.
+            }
+        }*/
+
+        //load
+        println!("loading the seccomp_load");
+        let result = seccomp_load(ctx);
+        println!("loading result {} ", result);
+        //release it
+        seccomp_release(ctx);
+        println!("done ");
+        //seccomp_export_bpf debug
     }
 }

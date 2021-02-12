@@ -6,14 +6,20 @@ RUN apt update && apt install -y \
     build-essential \
     curl \
     libseccomp-dev
+
+
     ##gcc-x86_64-linux-gnu
 
-# Install MUSL for MIPS.
+# Install MUSL for x86_64.
 WORKDIR /tmp
 RUN curl https://www.musl-libc.org/releases/$MUSL.tar.gz | tar xzf - && \
     cd $MUSL && \
     CC=x86_64-linux-gnu-gcc ./configure --prefix=/opt/musl --enable-wrappers=all && \
     make -j install
+#Install libcap
+RUN curl https://git.kernel.org/pub/scm/libs/libcap/libcap.git/snapshot/libcap-cap/v1.2.48.tar.gz | tar xzf - && \
+    cd libcap-cap/v1.2.48 && \
+    make install
 
 RUN useradd -m $USERNAME && (echo "$USERNAME:$USERNAME" | chpasswd)
 USER $USERNAME
@@ -31,4 +37,5 @@ COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./src ./src
 RUN cargo build --verbose --release --target x86_64-unknown-linux-musl
-  RUN ls -R /home/$USERNAME/target/x86_64-unknown-linux-musl/release
+RUN ls -R /home/$USERNAME/target/x86_64-unknown-linux-musl/release
+##RUN ln -s /usr/include/linux            $MUSLROOT/include

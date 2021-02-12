@@ -6,6 +6,7 @@ use serde::__private::Formatter;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::fmt::Display;
 
 /// base config for the container
 #[derive(Serialize, Deserialize, Debug)]
@@ -170,15 +171,22 @@ pub struct User {
 #[serde(rename = "capabilities")]
 pub struct LinuxCapabilities {
     // Bounding is the set of capabilities checked by the kernel.
-    bounding: Option<Vec<String>>,
+    pub(crate) bounding: Option<Vec<String>>,
     // Effective is the set of capabilities checked by the kernel.
-    effective: Option<Vec<String>>,
+    pub(crate) effective: Option<Vec<String>>,
     // Inheritable is the capabilities preserved across execve.
-    inheritable: Option<Vec<String>>,
+    pub(crate) inheritable: Option<Vec<String>>,
     // Permitted is the limiting superset for effective capabilities.
-    permitted: Option<Vec<String>>,
+    pub(crate) permitted: Option<Vec<String>>,
     // ambient is the ambient set of capabilities that are kept.
-    ambient: Option<Vec<String>>,
+    pub(crate) ambient: Option<Vec<String>>,
+}
+
+impl Display for LinuxCapabilities {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let buffer = String::new();
+        writeln!(f,"bounding = {:?}, effective = {:?}, inheritable = {:?}, permitted = {:?}, ambient = {:?}", self.bounding,self.effective, self.inheritable,self.permitted,self.ambient)
+    }
 }
 
 /// POSIXRlimit type and restrictions
