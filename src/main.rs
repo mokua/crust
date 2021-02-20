@@ -1,4 +1,5 @@
 mod caps;
+mod mount;
 mod resources;
 mod spec;
 
@@ -35,6 +36,12 @@ use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 
+#[macro_use]
+extern crate log;
+extern crate flexi_logger;
+
+use flexi_logger::{LevelFilter, LogSpecification, Logger};
+
 pub struct ChildConfig {
     argc: u8,
     uid: Uid,
@@ -47,7 +54,17 @@ pub struct ChildConfig {
 const STACK_SIZE: usize = 1024 * 1024;
 
 fn main() {
-    println!("Hello, world!");
+    // Hard code the trace level as our minimum logging level
+    let log_config = LogSpecification::default(LevelFilter::Trace).build();
+
+    Logger::with(log_config)
+        .format(flexi_logger::opt_format) // Specify how we want the logs formatted
+        .start()
+        .unwrap();
+
+    // Logging is ready. Let's use it to debug our complex algorithm
+    info!("we start!");
+
     //let mut buf = [0u8; 64];
     //let hostname_cstr = gethostname(&mut buf).expect("Failed getting hostname");
     //let hostname = hostname_cstr.to_str().expect("Hostname wasn't valid UTF-8");
@@ -100,22 +117,22 @@ fn main() {
 
     // Gets a value for config if supplied by user, or defaults to "default.conf"
     let command = matches.value_of("command").unwrap_or("default.conf");
-    println!("command: {}", command);
+    debug!("command: {}", command);
     let md = matches.value_of("mount_dir").unwrap();
-    println!("mound dir: {}", md);
+    debug!("mound dir: {}", md);
     let uid = matches.value_of("uid").unwrap();
-    println!("uid: {}", uid);
+    debug!("uid: {}", uid);
 
     let config_json = matches.value_of("config.json").unwrap();
-    println!("config_json: {}", config_json);
+    debug!("config_json: {}", config_json);
 
     let cgroup_path = matches.value_of("cgroup_path").unwrap();
-    println!("cgroup_path: {}", cgroup_path);
+    debug!("cgroup_path: {}", cgroup_path);
 
     //<<check-linux-version>>
-    println!("Validating the linux version .. ");
+    debug!("Validating the linux version .. ");
     let host = uname();
-    println!(
+    debug!(
         "utsname : release: {:?}, version:  {:?}, machine: {:?}",
         host.release(),
         host.version(),
@@ -129,10 +146,10 @@ fn main() {
     let major = major_str.parse::<i32>().unwrap();
     let minor = minor_str.parse::<i32>().unwrap();
 
-    println!("args : major {}, minor {} ", major, minor);
+    debug!("args : major {}, minor {} ", major, minor);
 
     if major != 4 && minor < 7 && "x86_64" != host.machine() {
-        println!("not matching...");
+        debug!("not matching...");
         exit(78);
     }
 
@@ -149,18 +166,18 @@ fn main() {
 
     //update linux cgroup resources
     let json = fs::read_to_string(config_json).unwrap();
-    println!("the json file ==> ");
-    println!("{}", json);
+    debug!("the json file ==> ");
+    debug!("{}", json);
     let spec: Spec = serde_json::from_str(&json).unwrap();
     let linux = spec.linux.as_ref().unwrap();
     let cgroup_resources: &LinuxResources = &linux.resources.as_ref().unwrap();
     let res = LinuxResources::install_resources(&cgroup_resources, &child_config, cgroup_path);
     match res {
         Ok(_) => {
-            println!("installed resources")
+            debug!("installed resources")
         }
         Err(_) => {
-            println!("error installation resources")
+            debug!("error installation resources")
         }
     }
     //check response!
@@ -189,15 +206,15 @@ fn main() {
     #[cfg(any(target_os = "linux"))]
     let p = nix::sched::clone(Box::new(child), stack, clone_flags, None) //Some(Signal::SIGCHLD)
         .expect("Failed to spawn the child");
-    println!("{}", p);
+    debug!("{}", p);
     // not sure why the following line is even needed
-    println!("flags {:?}", clone_flags);
+    debug!("flags {:?}", clone_flags);
 
     /* Update the UID and GID maps in the child */
     prepare_userns(p);
 
     //done,signal child
-    println!("signalling child to wake up");
+    debug!("signalling child to wake up");
     nix::unistd::write(parent_fd, b"OK").unwrap();
 }
 
@@ -222,6 +239,15 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
             println!("unable to set hostname {:?} ", err)
         }
     }
+    //sysctl
+    //libcrun_set_sysctl
+
+    //mounts
+    println!("calling to mounts ...");
+    let result = mount::mounts(&spec);
+    println!("mount result {:?} ", result);
+    //create_missing_devs
+
     //set the syscalls
     //todo get this from the user inout config.json
     spec.linux.as_ref().map(|linux| {
@@ -237,43 +263,6 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
             .map(|capabilities| caps::install_caps(&capabilities));
     });
 
-    let child = Command::new("bash")
-        .current_dir("/bin")
-        .stdin(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .spawn()
-        .expect("failed to execute process");
-
-    let mut the_process = Command::new("curl")
-        // Slice of arguments.
-        .args(&["hoverbear.org"])
-        // Set User/Group.
-        //.uid(1000) // Don't know it? Check that user's $UID
-        //.gid(1000)
-        // Set STDOUT
-        .stdout(Stdio::inherit())
-        // Set STDERR
-        .stderr(Stdio::inherit())
-        // Set the CWD.
-        .current_dir(&Path::new("/home"))
-        // Set ENV variables.
-        .env("IS_EXAMPLE", "true")
-        // Or remove ENV variables.
-        .env_remove("PRIVATE_VARIABLE")
-        // Spawn
-        .spawn()
-        .ok()
-        .expect("Failed to execute");
-    // ...
-    // Do stuff
-    // ...
-
-    // Wait for the process.
-    let the_status = the_process.wait().ok().expect("Couldn't wait for process.");
-    // Output some exit information.
-    println!("the status {:?}", the_status);
-
     /* Command::new("bash")
     .current_dir("/bin")
     .stdin(Stdio::inherit())
@@ -285,13 +274,15 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
 
     ///* Execute a shell command */
     println!("starting shell ... ");
-    //let args: &[std::ffi::CString] = &[];
+    let args: &[std::ffi::CString] = &[];
     /* let sh = CString::new("sh").expect("CString::new failed");
     let args: &[std::ffi::CString] = &[];
     let e = CString::new("PS1=-[ns-process]- #").expect("CString::new failed");
+    */
+
     let env: &[std::ffi::CString] = &[]; //
     execve(&CString::new("/bin/bash").unwrap().as_c_str(), args, env);
-    println!("execve returned, error");*/
+    println!("execve returned, error");
 
     thread::sleep(Duration::from(TimeSpec::minutes(20)));
     2
@@ -370,35 +361,7 @@ fn syscalls(seccomp: &LinuxSeccomp) {
             seccomp_sys::SCMP_ACT_ALLOW
         }
     };
-    /* void
-    setup_seccomp()
-    {
-        int rc;
 
-        /* Initialize the seccomp filter state */
-        if ((ctx = seccomp_init(SCMP_ACT_KILL)) == NULL) {
-            graceful_exit(1);
-        }
-        if ((rc = seccomp_reset(ctx, SCMP_ACT_KILL)) != 0) {
-            graceful_exit(1);
-        }
-
-        /* Add allowed system calls to the BPF program */
-        if ((rc = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0)) != 0) {
-            graceful_exit(1);
-        }
-        if ((rc = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0)) != 0) {
-            graceful_exit(1);
-        }
-        if ((rc = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit_group), 0)) != 0) {
-            graceful_exit(1);
-        }
-
-        /* Load the BPF program for the current context into the kernel */
-        if ((rc = seccomp_load(ctx)) != 0) {
-            graceful_exit(1);
-        }
-    }*/
     unsafe {
         /* Initialize the seccomp filter state */
         let ctx = seccomp_init(def_action).as_mut();

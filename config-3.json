@@ -61,7 +61,7 @@
       "selinuxLabel":"system_u:system_r:svirt_lxc_net_t:s0:c124,c675"
    },
    "root":{
-      "path":"rootfs",
+      "path":"/tmp/rootfs",
       "readonly":true
    },
    "hostname":"slartibartfast",

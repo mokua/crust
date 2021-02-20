@@ -69,9 +69,9 @@ pub struct Process {
 //#[serde(rename_all = "camelCase")]
 pub struct Root {
     // Path is the absolute path to the container's root filesystem.
-    path: String,
+    pub(crate) path: String,
     // Readonly makes the root filesystem for the container readonly before the process is executed.
-    readonly: Option<bool>,
+    pub(crate) readonly: Option<bool>,
 }
 
 /// Mount specifies a mount for a container.
@@ -80,15 +80,15 @@ pub struct Root {
 //#[serde(rename_all = "camelCase")]
 pub struct Mount {
     // Destination is the absolute path where the mount will be placed in the container.
-    destination: String,
+    pub(crate) destination: String,
     // Type specifies the mount kind.
     #[serde(rename = "type")]
-    mount_type: Option<String>,
+    pub(crate) mount_type: Option<String>,
     // Source specifies the source path of the mount.
-    source: Option<String>,
+    pub(crate) source: Option<String>,
     // Options are fstab style mount options.
     #[serde(rename = "options")]
-    mount_options: Option<Vec<String>>,
+    pub(crate) mount_options: Option<Vec<String>>,
 }
 
 /// Linux contains platform-specific configuration for Linux based containers.
