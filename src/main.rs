@@ -1,4 +1,5 @@
 mod caps;
+mod dev;
 mod mount;
 mod resources;
 mod spec;
@@ -15,7 +16,7 @@ use nix::unistd::{execve, execvp, fork, gethostname, pipe, sethostname, ForkResu
 use std::cmp::min;
 use std::fmt::Write;
 use std::process::{exit, Command, ExitStatus, Stdio};
-use std::{fs, process, thread, time};
+use std::{fs, io, process, thread, time};
 
 extern crate nix;
 use crate::spec::{Arch, LinuxSeccomp, LinuxSeccompAction, LinuxSeccompArg, Process, Spec};
@@ -29,7 +30,6 @@ use seccomp_sys::{
 };
 use std::ffi::CString;
 use std::fs::File;
-use std::io::Stderr;
 use std::os::raw::c_int;
 use std::os::unix::io::IntoRawFd;
 use std::path::Path;
@@ -206,15 +206,15 @@ fn main() {
     #[cfg(any(target_os = "linux"))]
     let p = nix::sched::clone(Box::new(child), stack, clone_flags, None) //Some(Signal::SIGCHLD)
         .expect("Failed to spawn the child");
-    debug!("{}", p);
+    info!("clone result {}", p);
     // not sure why the following line is even needed
-    debug!("flags {:?}", clone_flags);
+    info!("flags {:?}", clone_flags);
 
     /* Update the UID and GID maps in the child */
     prepare_userns(p);
 
     //done,signal child
-    debug!("signalling child to wake up");
+    info!("signalling child to wake up");
     nix::unistd::write(parent_fd, b"OK").unwrap();
 }
 
@@ -223,6 +223,7 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
         "starting the child, the fd on the child process {:?}",
         child_fd
     );
+
     let mut buf = [0u8; 2];
     let res = nix::unistd::read(child_fd, &mut buf);
     match res {
@@ -246,8 +247,18 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
     println!("calling to mounts ...");
     let result = mount::mounts(&spec);
     println!("mount result {:?} ", result);
-    //create_missing_devs
 
+    info!("print the directory ");
+    let paths = fs::read_dir(".").unwrap();
+
+    for path in paths {
+        println!("Name: {}", path.unwrap().path().display());
+        //if path.unwrap().file_type().unwrap().is_dir() {}
+    }
+
+    //create_missing_devs
+    info!("creating devices ");
+    dev::create_devices(&spec);
     //set the syscalls
     //todo get this from the user inout config.json
     spec.linux.as_ref().map(|linux| {
@@ -293,7 +304,7 @@ fn child(child_fd: i32, spec: &Spec) -> isize {
 /// of the form:
 ///    ID_inside-ns    ID-outside-ns   length
 fn prepare_userns(child_pid: Pid) {
-    println!("prepare ns in parent procees, {:?}", child_pid.as_raw());
+    info!("prepare ns in parent procees, {:?}", child_pid.as_raw());
     let mut buffer = String::new();
     let path = format!("/proc/{}/uid_map", child_pid.as_raw());
     writeln!(&mut buffer, "0\t{}\t1", child_pid.as_raw());
@@ -314,10 +325,10 @@ fn prepare_userns(child_pid: Pid) {
     let rs = fs::write(&path, &buffer);
     match rs {
         Ok(_) => {
-            println!("managed to write to the ns path {}", path)
+            info!("managed to write to the ns path {}", path)
         }
         Err(err) => {
-            println!("error {:?} to write to the path {}", err, path)
+            info!("error {:?} to write to the path {}", err, path)
         }
     }
 
@@ -327,10 +338,10 @@ fn prepare_userns(child_pid: Pid) {
     let rs = fs::write(&path, &buffer);
     match rs {
         Ok(_) => {
-            println!("managed to write to the ns path {}", path)
+            info!("managed to write to the ns path {}", path)
         }
         Err(err) => {
-            println!("error {:?} to write to the path {}", err, path)
+            info!("error {:?} to write to the path {}", err, path)
         }
     }
 }
@@ -339,10 +350,10 @@ fn prepare_userns(child_pid: Pid) {
 /// syscalls into the kernel */
 //todo return results & clean_up
 fn syscalls(seccomp: &LinuxSeccomp) {
-    println!("syscalls -- seccomp ");
+    info!("syscalls -- seccomp ");
     if seccomp.syscalls.is_none() {
         //return early
-        println!("syscalls empty,  return early");
+        info!("syscalls empty,  return early");
         return;
     }
     let syscalls = seccomp.syscalls.as_ref().unwrap();
@@ -357,7 +368,7 @@ fn syscalls(seccomp: &LinuxSeccomp) {
         LinuxSeccompAction::ActAllow => seccomp_sys::SCMP_ACT_ALLOW,
         LinuxSeccompAction::ActLog => seccomp_sys::SCMP_ACT_ALLOW, //todo
         _ => {
-            println!("fall through");
+            info!("fall through");
             seccomp_sys::SCMP_ACT_ALLOW
         }
     };
@@ -366,14 +377,14 @@ fn syscalls(seccomp: &LinuxSeccomp) {
         /* Initialize the seccomp filter state */
         let ctx = seccomp_init(def_action).as_mut();
         if ctx.is_none() {
-            println!("seccomp_init failed ... , returned null");
+            info!("seccomp_init failed ... , returned null");
             return;
         }
         let ctx = ctx.unwrap();
         //check the architecture if its supported
         //todo check the
         if seccomp.architectures.is_none() {
-            println!("seccomp.architectures not valid .. ");
+            info!("seccomp.architectures not valid .. ");
             return;
         }
 
@@ -399,7 +410,7 @@ fn syscalls(seccomp: &LinuxSeccomp) {
             //        -ENOMEM
             //               The library was unable to allocate enough memory.
             if result != 0 && result != -libc::EEXIST {
-                println!("seccomp adding architecture failed!, result {} ", result);
+                info!("seccomp adding architecture failed!, result {} ", result);
                 seccomp_release(ctx);
                 return;
             }

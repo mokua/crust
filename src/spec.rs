@@ -286,23 +286,45 @@ impl fmt::Display for LinuxNamespaceType {
 #[serde(rename = "device")]
 pub struct LinuxDevice {
     // Path to the device.
-    path: String,
+    pub(crate) path: String,
     // Device type, block, char, etc.
     #[serde(rename = "type")]
-    device_type: String,
+    pub(crate) device_type: String,
     // Major is the device's major number.
-    major: i64,
+    pub(crate) major: u64,
     // Minor is the device's minor number.
-    minor: i64,
+    pub(crate) minor: u64,
     // FileMode permission bits for the device.
     #[serde(rename = "fileMode")]
-    file_mode: Option<u32>, //Option<FileMode>,
+    pub(crate) file_mode: Option<u32>, //Option<FileMode>,
     // uid of the device.
     #[serde(rename = "uid")]
-    uid: Option<u32>,
+    pub(crate) uid: Option<u32>,
     // Gid of the device.
     #[serde(rename = "gid")]
-    gid: Option<u32>,
+    pub(crate) gid: Option<u32>,
+}
+
+impl LinuxDevice {
+    pub fn new(
+        path: &str,
+        device_type: &str,
+        major: u64,
+        minor: u64,
+        file_mode: u32,
+        uid: u32,
+        gid: u32,
+    ) -> Self {
+        Self {
+            path: path.to_string(),
+            device_type: device_type.to_string(),
+            major,
+            minor,
+            file_mode: Some(file_mode),
+            uid: Some(uid),
+            gid: Some(gid),
+        }
+    }
 }
 
 // LinuxSeccomp represents syscall restrictions
